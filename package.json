@@ -1,0 +1,35 @@
+{
+  "name": "lingua-atelier",
+  "version": "0.7.0",
+  "private": true,
+  "description": "Local-first foreign-language learning notes for Obsidian. Currently supports Chinese, English and French.",
+  "scripts": {
+    "build": "tsc --noEmit && node scripts/build.mjs",
+    "test": "node --import tsx --test tests/*.test.ts",
+    "install:vault": "node scripts/install-public.mjs",
+    "check:local": "node scripts/check-local.mjs",
+    "test:portable": "node --test tests/portable.test.mjs",
+    "package:share": "node scripts/package-share.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "esbuild": "^0.25.0",
+    "obsidian": "^1.8.7",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.0"
+  },
+  "dependencies": {
+    "dompurify": "3.4.17",
+    "markmap-lib": "0.18.12",
+    "markmap-view": "0.18.12"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Rseam-07/lingua-atelier.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Rseam-07/lingua-atelier/issues"
+  },
+  "homepage": "https://github.com/Rseam-07/lingua-atelier#readme"
+}

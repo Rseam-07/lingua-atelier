@@ -1,0 +1,11 @@
+/* Lingua Paper — optional, reversible Obsidian snippet */
+body.theme-light{--background-primary:#fbfaf7;--background-primary-alt:#f8f7f3;--background-secondary:#f2f2ed;--background-secondary-alt:#f2f2ed;--background-modifier-border:#e4e7dd;--background-modifier-border-hover:#d6dccf;--text-normal:#354036;--text-muted:#858d80;--text-faint:#a5ab9d;--interactive-accent:#5b7a62;--interactive-accent-hover:#4d6b54;--text-accent:#5b7a62;--text-accent-hover:#4d6b54;--color-accent:#5b7a62;--nav-item-background-active:#e4eadf;--nav-item-color-active:#45624b;--tab-container-background:#f2f2ed;--titlebar-background:#f2f2ed;--titlebar-background-focused:#f2f2ed;--ribbon-background:#f2f2ed;--tab-radius-active:10px;--input-radius:7px;--modal-radius:14px}
+body.theme-dark{--interactive-accent:#829e7a;--interactive-accent-hover:#95af8d;--text-accent:#a3ba99;--nav-item-background-active:#364032;--nav-item-color-active:#c0d2b8}
+.workspace-leaf-content[data-type=lingua-atelier-view] .view-header{background:var(--background-primary);border-bottom:0;height:34px;opacity:.75}
+.workspace-leaf-content[data-type=lingua-atelier-view] .view-header-title{font-size:11px;color:var(--text-muted)}
+.workspace-ribbon.mod-left .side-dock-ribbon-action{opacity:.7}
+.nav-file-title,.nav-folder-title{border-radius:7px;font-size:13px;line-height:1.7}
+.nav-file-title.is-active{font-weight:500}
+.markdown-source-view.mod-cm6 .cm-content{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;line-height:1.85}
+.markdown-source-view.mod-cm6 .cm-header,.markdown-preview-view h1,.markdown-preview-view h2,.markdown-preview-view h3{font-family:Georgia,"Songti SC",serif;font-weight:500}
+.markdown-preview-view{line-height:1.85}

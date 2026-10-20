@@ -1,0 +1,62 @@
+name: Build beta release
+on:
+  push:
+    tags: ['[0-9]+.[0-9]+.[0-9]+']
+  workflow_dispatch:
+    inputs:
+      publish_beta:
+        description: Publish a public beta after all checks pass
+        type: boolean
+        default: false
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: macos-14
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Install and test
+        run: |
+          npm ci
+          npm test
+          python -m pip install fastapi==0.146.0 python-multipart==0.0.32 numpy httpx
+          python -m unittest discover -s tests -p '*_test.py'
+      - name: Build and audit portable package
+        run: |
+          npm run build
+          npm run test:portable
+          npm run package:share
+      - name: Create draft prerelease
+        if: startsWith(github.ref, 'refs/tags/') || inputs.publish_beta
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SOURCE_REF: ${{ github.ref_name }}
+          PUBLISH_BETA: ${{ inputs.publish_beta }}
+        run: |
+          tag=$(node -p 'require("./manifest.json").version')
+          if [[ "$GITHUB_REF_TYPE" == tag && "$SOURCE_REF" != "$tag" ]]; then exit 1; fi
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "Release already exists; keeping its assets unchanged."
+            exit 0
+          fi
+          draft=()
+          if [[ "$PUBLISH_BETA" != true ]]; then draft=(--draft); fi
+          gh release create "$tag" --target "$GITHUB_SHA" --title "Lingua Atelier $tag beta" "${draft[@]}" --prerelease --notes-file docs/RELEASE_NOTES.md dist/lingua-atelier/main.js dist/lingua-atelier/manifest.json dist/lingua-atelier/styles.css releases/Lingua-Atelier-*-beta.zip releases/Lingua-Atelier-*-source.zip releases/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v6
+        with:
+          name: lingua-atelier-beta
+          path: |
+            releases/*.zip
+            releases/SHA256SUMS.txt
+            dist/lingua-atelier/main.js
+            dist/lingua-atelier/manifest.json
+            dist/lingua-atelier/styles.css

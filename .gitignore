@@ -1,0 +1,14 @@
+node_modules/
+runtime/
+dist/
+artifacts/
+course-output/
+*.log
+.DS_Store
+__pycache__/
+output/
+tmp/
+releases/
+.env*
+*.backup-*
+connection-token.txt

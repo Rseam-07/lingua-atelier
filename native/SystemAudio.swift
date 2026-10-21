@@ -46,7 +46,8 @@ final class AudioCapture: NSObject, SCStreamOutput, SCStreamDelegate {
         signal(SIGINT, SIG_IGN)
         let source = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .main)
         source.setEventHandler { [weak self] in
-            Task { await self?.stop() }
+            guard let capture = self else { return }
+            Task { [capture] in await capture.stop() }
         }
         source.resume()
         signalSource = source

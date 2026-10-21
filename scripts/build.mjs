@@ -23,7 +23,7 @@ if(process.platform==='darwin'){
   const binaries=[];
   for(const arch of ['arm64','x86_64']){
     const binary=`dist/lingua-atelier/system-audio-${arch}`;binaries.push(binary);
-    execFileSync('/usr/bin/swiftc',['-O','-parse-as-library','-target',`${arch}-apple-macos13.0`,'-module-cache-path','/private/tmp/lingua-swift-native','native/SystemAudio.swift','-o',binary,...frameworks],{stdio:'inherit',env:{...process.env,CLANG_MODULE_CACHE_PATH:'/private/tmp/lingua-clang-native'}});
+    execFileSync('/usr/bin/swiftc',['-O','-swift-version','5','-parse-as-library','-target',`${arch}-apple-macos13.0`,'-module-cache-path','/private/tmp/lingua-swift-native','native/SystemAudio.swift','-o',binary,...frameworks],{stdio:'inherit',env:{...process.env,CLANG_MODULE_CACHE_PATH:'/private/tmp/lingua-clang-native'}});
   }
   execFileSync('/usr/bin/lipo',['-create',...binaries,'-output','dist/lingua-atelier/system-audio']);
 }

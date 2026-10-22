@@ -1,7 +1,7 @@
 {
   "id": "lingua-atelier",
   "name": "Lingua Atelier",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "minAppVersion": "1.11.4",
   "description": "外语学习录音工作台：双语字幕、实时翻译、课堂整理、思维导图与原生 Markdown。当前支持中文、英语和法语。",
   "author": "Lingua Atelier",

@@ -1,4 +1,4 @@
-"""Explicit desktop companion installer; never run by the Obsidian plugin."""
+"""Desktop installer, run standalone or after an explicit Download click."""
 import argparse
 import json
 import os
@@ -86,7 +86,7 @@ def main():
     print('\n识别组件安装完成。回到插件设置，点击“启动服务”。')
     print('手机连接时，在电脑运行下载包中的 Share-to-phone 启动器；连接密钥仅保存在本机：')
     print(token)
-    print('翻译与整理：另行安装 Ollama 并运行 ollama pull qwen2.5:3b，或在插件中填写自己的文字 API。')
+    print('翻译与整理：返回插件快速设置，下载本地文字模型或选择自己的在线 API。')
 
 
 if __name__ == '__main__':

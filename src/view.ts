@@ -1,4 +1,5 @@
-import { Component,ItemView,MarkdownRenderer,Notice,SuggestModal,TFile,WorkspaceLeaf,setIcon } from 'obsidian';
+import { Component,ItemView,MarkdownRenderer,Notice,SuggestModal,TFile,WorkspaceLeaf,setIcon,Platform } from 'obsidian';
+import {localModel} from './model-catalog';
 import type AtelierPlugin from './main';
 import { clock } from './core';
 import { demoSession } from './demo';
@@ -39,11 +40,15 @@ export class AtelierView extends ItemView{
     button(tools,'归档笔记','folder-tree',()=>void this.run(()=>this.plugin.organizeNotes()),'la-quiet');
     button(tools,'导入音频','file-audio',()=>this.importFile(),'la-quiet');
     button(tools,'历史笔记','history',()=>void this.run(async()=>{const items=await this.plugin.controller.store.sessions();new SessionPicker(this.plugin,items).open();}),'la-quiet');
+    button(tools,'快速设置','wand-sparkles',()=>this.plugin.openSetup(),'la-quiet');
+    button(tools,'使用提示','circle-help',()=>this.plugin.openHelp(),'la-icon-only la-quiet');
     button(tools,'设置','sliders-horizontal',()=>new SettingsModal(this.app,this.plugin).open(),'la-icon-only la-quiet');
     const heading=el.createDiv({cls:'la-heading'});
     const meta=heading.createDiv({cls:'la-meta'});meta.createSpan({text:new Date().toLocaleDateString('zh-CN',{month:'long',day:'numeric',weekday:'long'}).toUpperCase()});meta.createSpan({text:'·'});meta.createSpan({text:'外语学习 · 中 / 英 / 法'});this.badge=meta.createSpan({cls:'la-local-badge',text:'本地优先'});
     this.title=heading.createEl('input',{cls:'la-title',attr:{'aria-label':'笔记标题',placeholder:'给这一段灵感，起个名字。'},value:'外语课堂'});
     this.caption=heading.createDiv({cls:'la-caption',text:'专心听，剩下的交给这里。'});
+    const tips=heading.createEl('details',{cls:'la-usage-tips'});tips.createEl('summary',{text:'使用小提示'});
+    tips.createEl('p',{text:'首次使用点右上角“快速设置”，选模型并下载。开始录音后按分段显示字幕，约 30 秒起整理要点；结束录音时等待保存完成。字幕可回听，失败可重试。'+(!Platform.isDesktopApp?' 手机录音请保持 Obsidian 前台，先试录一分钟。':'')});
     const nav=el.createDiv({cls:'la-nav'}),tabWrap=nav.createDiv({cls:'la-tabs'});
     for(const [id,label,icon]of [['notes','课堂笔记','notebook-pen'],['transcript','双语字幕','captions'],['map','思维导图','git-fork']]){const b=button(tabWrap,label,icon,()=>{this.selected=id;this.switchTab();});b.dataset.tab=id;this.tabs.push(b);}
     const actions=nav.createDiv({cls:'la-nav-actions'});
@@ -60,7 +65,7 @@ export class AtelierView extends ItemView{
       const href=link?.getAttribute('data-href');if(!href)return;
       event.preventDefault();event.stopPropagation();void this.run(()=>this.app.workspace.openLinkText(href,this.plugin.controller.session?.notePath||'','tab'));
     });
-    const aside=this.content.createDiv({cls:'la-transcript-panel'}),subHead=aside.createDiv({cls:'la-section-head'});subHead.createSpan({text:'双语字幕'});subHead.createSpan({text:'FR / 中文',cls:'la-section-hint'});this.subtitles=aside.createDiv({cls:'la-subtitles'});
+    const aside=this.content.createDiv({cls:'la-transcript-panel'}),subHead=aside.createDiv({cls:'la-section-head'});subHead.createSpan({text:'双语字幕'});subHead.createSpan({text:'原文 / 中文',cls:'la-section-hint'});this.subtitles=aside.createDiv({cls:'la-subtitles'});
     this.map=this.content.createDiv({cls:'la-map-panel'});
     const footer=el.createDiv({cls:'la-footer'}),left=footer.createDiv({cls:'la-record-status'});
     const recording=left.createDiv({cls:'la-record-indicator'});this.meter=recording.createSpan({cls:'la-wave'});for(let i=0;i<9;i++)this.meter.createSpan();
@@ -69,7 +74,7 @@ export class AtelierView extends ItemView{
     this.markButton=button(controls,'标记重点','bookmark-plus',()=>this.plugin.controller.mark(),'la-quiet');
     this.pauseButton=button(controls,'暂停','pause',()=>void this.run(()=>this.plugin.controller.pause()),'la-icon-only');
     this.stopButton=button(controls,'结束录音','square',()=>void this.run(()=>this.plugin.controller.stop()),'la-stop');
-    this.mainButton=button(controls,'开始录音','mic',()=>void this.run(()=>{const c=this.plugin.controller,title=this.title.value.trim();return c.start(c.session&&title===c.session.title&&isTestTitle(title)?'外语课堂':title);}), 'la-primary');
+    this.mainButton=button(controls,'开始录音','mic',()=>void this.run(()=>{if(!this.plugin.settings.setupCompleted){this.plugin.openSetup();return;}const c=this.plugin.controller,title=this.title.value.trim();return c.start(c.session&&title===c.session.title&&isTestTitle(title)?'外语课堂':title);}), 'la-primary');
     this.unsubscribe=this.plugin.controller.onChange(()=>this.scheduleRender());this.render();
   }
   private async run(fn:()=>void|Promise<void>):Promise<void>{if(this.operation)return;this.operation=true;try{await fn();}catch(e){new Notice(e instanceof Error?e.message:String(e),9000);}finally{this.operation=false;this.render();}}
@@ -83,8 +88,8 @@ export class AtelierView extends ItemView{
     const recent=s?.metrics?.slice().reverse();
     const lastAsr=recent?.find(m=>m.stage==='asr'),lastTranslation=recent?.find(m=>m.stage==='translation');
     this.timer.setText(`${clock(s?.duration||0)} · ${waiting||(lastAsr?`最近识别 ${(lastAsr.durationMs/1000).toFixed(1)} 秒${lastTranslation?` · 翻译 ${(lastTranslation.durationMs/1000).toFixed(1)} 秒`:''}`:'音频保存在本机')}`);
-    const asr=c.settings.asrEngine==='qwen'?'Qwen3-ASR 1.7B':path.basename(c.settings.whisperModel).replace(/^ggml-|\.bin$/g,'')||'Whisper';
-    this.badge.setText(s?.demo?'示例 · 非真实录音':`${c.settings.llmMode==='ollama'?'本地':'自定义 API'} · ${asr}${c.settings.dualRecognition&&c.settings.language==='auto'?' · 中法双路':''}`);this.badge.toggleClass('is-demo',!!s?.demo);
+    const asr=c.settings.asrEngine==='ondevice'?localModel(c.settings.localSpeechModel).name.split(' · ')[0]:c.settings.asrEngine==='cloud'?'Qwen 在线识别':c.settings.asrEngine==='qwen'?'Qwen3-ASR 1.7B':path.basename(c.settings.whisperModel).replace(/^ggml-|\.bin$/g,'')||'Whisper';
+    this.badge.setText(s?.demo?'示例 · 非真实录音':`${c.settings.asrEngine==='cloud'?'在线识别':'本地识别'} · ${asr}${c.settings.dualRecognition&&c.settings.language==='auto'&&['qwen','whisper'].includes(c.settings.asrEngine)?' · 中法双路':''}`);this.badge.toggleClass('is-demo',!!s?.demo);
     const level=p==='recording'?Math.min(1,c.level*14):0;this.meter.style.setProperty('--level',String(level));
     this.mainButton.hidden=active||p==='finishing'||p==='starting';this.mainButton.disabled=busy||this.operation;
     this.pauseButton.hidden=!active;this.pauseButton.disabled=this.operation;this.pauseButton.setAttribute('aria-label',p==='paused'?'继续':'暂停');setIcon(this.pauseButton.firstElementChild as HTMLElement,p==='paused'?'play':'pause');
@@ -114,7 +119,7 @@ export class AtelierView extends ItemView{
     const entries:{segment?:Segment;part?:AudioPart;start:number}[]=(s?.segments||[]).map(segment=>({segment,start:segment.start,part:s!.audio.find(a=>a.start===segment.start&&a.end===segment.end)}));
     for(const part of s?.audio||[])if(part.recognition&&!entries.some(e=>e.part===part))entries.push({part,start:part.start});
     entries.sort((a,b)=>a.start-b.start);
-    if(!s||!entries.length){const empty=this.subtitles.createDiv({cls:'la-subtitle-empty'});setIcon(empty.createDiv(),'audio-lines');empty.createEl('p',{text:'等待第一句话'});empty.createEl('small',{text:'法语在上，中文在下。\n一句一句，跟上你的节奏。'});if(needsRetry&&!this.plugin.controller.busy&&!s?.demo)button(empty,'恢复未完成转写','rotate-cw',()=>void this.run(()=>this.plugin.controller.retry()),'la-retry');return;}
+    if(!s||!entries.length){const empty=this.subtitles.createDiv({cls:'la-subtitle-empty'});setIcon(empty.createDiv(),'audio-lines');empty.createEl('p',{text:'等待第一句话'});empty.createEl('small',{text:'原文在上，中文在下。\n一句一句，跟上你的节奏。'});if(needsRetry&&!this.plugin.controller.busy&&!s?.demo)button(empty,'恢复未完成转写','rotate-cw',()=>void this.run(()=>this.plugin.controller.retry()),'la-retry');return;}
     // Keep the live DOM bounded in long lectures. The complete transcript is in Markdown.
     if(entries.length>180)this.subtitles.createDiv({cls:'la-muted',text:'显示最近 180 段；完整逐字稿已保存在 Markdown。'});
     for(const {segment,part,start} of entries.slice(-180)){
@@ -124,7 +129,7 @@ export class AtelierView extends ItemView{
       if(segment){
         
         const chinese=/[\u3400-\u9fff]/.test(segment.source)&&!/[A-Za-zÀ-ÿ]/.test(segment.source);
-        row.createDiv({cls:'la-fr',text:segment.source,attr:{lang:chinese?'zh-CN':'fr'}});
+        row.createDiv({cls:'la-fr',text:segment.source,attr:{lang:chinese?'zh-CN':this.plugin.settings.language==='auto'?'':this.plugin.settings.language}});
         if(segment.translation!==segment.source)row.createDiv({cls:'la-zh',text:segment.translation||(segment.status==='error'?'翻译失败，可点击下方重试。':'正在翻译…'),attr:{lang:'zh-CN'}});
       }else row.createDiv({cls:'la-muted',text:part?.recognition?.reviewRequired?'这段尚未识别出有效文字，原音已保存':'未检测到可用文字'});
       const comparison=part?.recognition;

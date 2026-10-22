@@ -3,6 +3,7 @@ import { Providers } from './providers';
 import { SystemRecorder } from './audio-native';
 import { LanguageQueue } from './language-queue';
 import {usefulForNotes} from './notes';
+import type {LocalInference} from './local-models';
 import type { Store } from './store';
 import { type Settings,type Session,type Segment,type Chunk,type AudioPart,type ProcessingMetric,type RecognitionLanguage } from './types';
 
@@ -16,7 +17,7 @@ export class Controller {
   private nextPart=0;private summaryRequested=false;private forceSummary=false;private stopping:Promise<void>|null=null;
   private maintaining=false;private maintenanceTask:Promise<unknown>|null=null;
   providers:Providers;
-  constructor(public settings:Settings,public store:Store,key:()=>string,private captureFactory:CaptureFactory=(s,c,m,e)=>s.audioSource==='system'?new SystemRecorder(s,c,m,e):new Recorder(s,c,m,e),asrKey:()=>string=()=>''){this.providers=new Providers(settings,key,asrKey);this.llmQueue=this.newLanguageQueue();}
+  constructor(public settings:Settings,public store:Store,key:()=>string,private captureFactory:CaptureFactory=(s,c,m,e)=>s.audioSource==='system'?new SystemRecorder(s,c,m,e):new Recorder(s,c,m,e),asrKey:()=>string=()=>'',local?:LocalInference,cloudKey:()=>string=()=>''){this.providers=new Providers(settings,key,asrKey,local,cloudKey);this.llmQueue=this.newLanguageQueue();}
   private newLanguageQueue():LanguageQueue{return new LanguageQueue(()=>this.settings.llmMode==='compatible');}
   onChange(fn:()=>void):()=>void{this.listeners.add(fn);return()=>{this.listeners.delete(fn);};}
   emit():void{for(const fn of this.listeners)fn();}
@@ -39,7 +40,7 @@ export class Controller {
   }
   private measure(s:Session,metric:ProcessingMetric):void{(s.metrics||=[]).push(metric);if(s.metrics.length>300)s.metrics.splice(0,s.metrics.length-300);}
   private async recognize(s:Session,part:AudioPart,wav:ArrayBuffer):Promise<string>{
-    if(!this.settings.dualRecognition||this.settings.language!=='auto')return this.providers.transcribe(wav);
+    if(!this.settings.dualRecognition||this.settings.language!=='auto'||['ondevice','cloud'].includes(this.settings.asrEngine))return this.providers.transcribe(wav);
     const context=s.segments.filter(x=>x.end<=part.start&&x.end>=part.start-40).map(x=>`${x.reviewRequired?'[暂选未核对] ':''}${x.source}`).join('\n');
     const result=await this.providers.transcribeDual(wav,context);part.recognition=result.comparison;
     if(result.comparison.reviewRequired){s.reviewRequired=true;if(!result.text)part.status='review';}
@@ -47,7 +48,7 @@ export class Controller {
   }
   async start(title:string):Promise<void>{
     if(this.busy)return;
-    this.starting=true;this.status='正在检查本地服务…';this.emit();
+    this.starting=true;this.status='正在检查模型与录音设置…';this.emit();
     try{
     // Do not create an empty note, start a microphone, or claim to record if prerequisites fail.
     await this.providers.ensure(text=>{this.status=text;this.emit();});
@@ -73,7 +74,7 @@ export class Controller {
         // Far-field teachers can be quiet. Preserve the full speech block;
         // this fast path is only for practically zero-valued digital silence.
         if(rms(c.samples)<0.00001){part.status='silent';return;}
-        this.status=this.settings.dualRecognition&&this.settings.language==='auto'?'正在核对法语、中文两路识别…':'正在识别课堂语音…';this.emit();
+        this.status=this.settings.dualRecognition&&this.settings.language==='auto'&&['qwen','whisper'].includes(this.settings.asrEngine)?'正在核对法语、中文两路识别…':'正在识别课堂语音…';this.emit();
         const began=performance.now();const source=await this.recognize(s,part,wav);
         this.measure(s,{stage:'asr',durationMs:performance.now()-began,waitMs:began-queuedAt,audioEnd:c.end});
         if(!source){if(part.status!=='review')part.status='done';return;}
@@ -99,7 +100,7 @@ export class Controller {
     if(live&&!this.forceSummary&&(s.segments.length-s.summaryVersion<this.settings.summaryEvery||s.segments.at(-1)!.end-covered<this.settings.summarySeconds))return;
     this.summaryRequested=true;this.forceSummary=false;const queuedAt=performance.now();
     this.llmQueue.summarize(async signal=>{
-      if(this.pendingAsr&&this.settings.llmMode==='ollama'){this.summaryRequested=false;return;}
+      if(this.pendingAsr&&this.settings.llmMode!=='compatible'){this.summaryRequested=false;return;}
       // Coalesce all text available at execution time; do not queue stale outline rewrites.
       const fresh:Segment[]=[];let chars=0;
       for(const segment of s.segments.slice(s.summaryVersion)){

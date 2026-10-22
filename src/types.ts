@@ -1,9 +1,9 @@
 export interface Settings {
   folder: string; asrUrl: string; whisperBinary: string; whisperModel: string;
-  asrEngine: 'whisper' | 'qwen'; qwenUrl: string; qwenPython: string; qwenServer: string; qwenModel: string;
+  asrEngine: 'whisper' | 'qwen' | 'ondevice' | 'cloud'; qwenUrl: string; qwenPython: string; qwenServer: string; qwenModel: string;
   autoLaunch: boolean; language: string; chunkSeconds: number; silenceRms: number;
   dualRecognition: boolean;
-  llmMode: 'ollama' | 'compatible'; llmUrl: string; llmModel: string; llmBinary: string;
+  llmMode: 'ollama' | 'compatible' | 'ondevice'; llmUrl: string; llmModel: string; llmBinary: string;
   secretName: string; deviceId: string; audioSource: 'microphone' | 'system';
   asrSecretName:string;
   summaryEvery: number; summarySeconds: number; openOnStartup: boolean;
@@ -11,6 +11,8 @@ export interface Settings {
   asrUseGlossary:boolean;
   systemAudioHelper: string;
   vadModel: string; preserveWeakSpeech: boolean;
+  setupCompleted:boolean; localSpeechModel:string; localTextModel:string;
+  cloudRegion:'cn'|'intl'; cloudSecretName:string; cloudConsent:boolean; llmUseCloudKey:boolean;
 }
 export const DEFAULTS: Settings = {
   folder: 'Lingua', asrUrl: 'http://127.0.0.1:8180',
@@ -26,6 +28,8 @@ export const DEFAULTS: Settings = {
   systemAudioHelper: '',
   vadModel: '',
   preserveWeakSpeech: true,
+  setupCompleted:false,localSpeechModel:'whisper-base',localTextModel:'qwen-text-0.5b',
+  cloudRegion:'cn',cloudSecretName:'lingua-atelier-cloud',cloudConsent:false,llmUseCloudKey:false,
 };
 export type Phase = 'idle' | 'starting' | 'recording' | 'paused' | 'finishing' | 'complete' | 'demo';
 export interface Segment {

@@ -15,7 +15,7 @@ for(const directory of ['src','installers','docs','.github/workflows']){
   for(const file of await readdir(directory))if(/\.(?:ts|py|txt|md|command|ps1|yml)$/.test(file))files.push(`${directory}/${file}`);
 }
 for(const file of await readdir('tests'))if(file.endsWith('.test.ts')||['portable.test.mjs','qwen_server_test.py','qwen_dual_test.py','portable_runtime_test.py'].includes(file))files.push(`tests/${file}`);
-for(const file of ['build.mjs','install-public.mjs','check-local.mjs','package-share.mjs'])files.push(`scripts/${file}`);
+for(const file of ['build.mjs','install-public.mjs','check-local.mjs','package-share.mjs','smoke-local-inference.mts'])files.push(`scripts/${file}`);
 for(const file of ['SystemAudio.swift','qwen_asr_server.py','qwen_dual.py','qwen_transformers.py'])files.push(`native/${file}`);
 for(const file of files){if(!(await lstat(file)).isFile())throw new Error('Unexpected source entry');await copy(file,join(source,file));}
 await copy('dist/lingua-atelier/THIRD_PARTY_NOTICES.md',join(source,'THIRD_PARTY_NOTICES.md'));

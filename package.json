@@ -1,6 +1,6 @@
 {
   "name": "lingua-atelier",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "private": true,
   "description": "Local-first foreign-language learning notes for Obsidian. Currently supports Chinese, English and French.",
   "scripts": {
@@ -19,7 +19,9 @@
     "typescript": "^5.9.0"
   },
   "dependencies": {
+    "@huggingface/transformers": "3.8.1",
     "dompurify": "3.4.17",
+    "fflate": "0.8.2",
     "markmap-lib": "0.18.12",
     "markmap-view": "0.18.12"
   },

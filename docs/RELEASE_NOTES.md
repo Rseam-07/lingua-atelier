@@ -1,12 +1,14 @@
-Lingua Atelier 0.7.0 public beta
+# Lingua Atelier 0.8.0 beta
 
-- Foreign-language learning workspace, currently supporting Chinese, English and French: recording, bilingual captions, grounded notes, Markmap, Markdown, SRT and Canvas.
-- Removed developer-machine paths; shared plugin bundle can load without Node on mobile.
-- Optional desktop setup: Apple Silicon / MLX; experimental Windows x64 and Intel / Transformers.
-- Phone/tablet can connect to a user-owned authenticated speech service. Per-install connection token; separate sharing port.
-- Explicit installers, pinned model revisions and UV checksums. No bundled keys, private notes, recordings or weights.
-- API credentials stored in Obsidian SecretStorage. Each user configures their own text provider.
+面向中文、英语和法语学习的 Obsidian 录音工作台，新增首次使用引导。
 
-Status: Mac prototype tested; Windows and mobile hardware acceptance is still pending. Mobile background and lock-screen recording, CPU realtime latency, and automatic transcription accuracy are not guaranteed. Desktop speech dependencies must be installed separately; Obsidian/BRAT only install the plugin files.
+- 直接在插件里选择语音和文字的本地 / 在线模式。
+- 手动点击下载本地模型，显示进度，校验文件并检查首次加载；失败重试保留已完成文件。
+- 内置 Whisper Tiny / Base / Small 与 Qwen2.5 文字模型，使用已打包的 JS / WASM 在当前设备上推理；手机不必连接电脑。
+- 桌面 Qwen3-ASR 环境可在引导中点击安装，已有 Qwen / Whisper / Ollama 环境和设置保留。
+- 在线语音支持用户自己的百炼 API；可与百炼文字共用密钥，也可使用已有 DeepSeek 文字 API。在线音频发送需要在引导中确认，不提供共享额度。
+- 增加使用说明与工作台小提示，高级路径和端口默认折叠。
 
-See README and QUICKSTART before installing. This is an Obsidian plugin, not a standalone mobile app or a shared editing service.
+本地轻量模型和手机模式仍为测试功能，处理速度、识别准确率、翻译与整理质量取决于模型和设备。0.5B 文字模型能力有限；不能据其输出判断课程事实。iOS / 安卓麦克风、内存、前台长录音和锁屏行为仍需真机测试，不保证后台录音。本项目尚未上架 Obsidian 社区目录。
+
+每位使用者自行选择和下载模型、配置自己的在线密钥。安装包不包含课堂笔记、录音、个人配置、密钥或模型权重。

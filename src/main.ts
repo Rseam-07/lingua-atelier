@@ -1,6 +1,10 @@
 import { Plugin,Notice,FileSystemAdapter,MarkdownView,TFile,TFolder,normalizePath,Platform,requestUrl } from 'obsidian';
 import {configureDesktop,desktop,desktopDefaults} from './runtime';
 import {configureMobileTransport} from './http';
+import {LocalModels} from './local-models';
+import {DesktopSetup} from './desktop-setup';
+import {downloadBytes} from './download';
+import {QuickSetupModal,UsageModal} from './onboarding';
 import { DEFAULTS,type Settings } from './types';
 import { Controller } from './controller';
 import { Store } from './store';
@@ -11,11 +15,17 @@ import {isTestSession} from './organize-core';
 import {lockOrganizer} from './organizer-lock';
 import type {Session} from './types';
 export default class AtelierPlugin extends Plugin{
-  declare settings:Settings;controller!:Controller;
+  declare settings:Settings;controller!:Controller;localModels!:LocalModels;desktopSetup!:DesktopSetup;
+  private setupModal:QuickSetupModal|null=null;
   async onload():Promise<void>{
     configureDesktop(Platform.isDesktopApp);
     if(!Platform.isDesktopApp)configureMobileTransport(async(url,options)=>requestUrl({url,method:options.method,headers:options.headers,body:options.body,throw:false}));
-    this.settings={...DEFAULTS,...desktopDefaults(),...await this.loadData()};this.makeController();
+    const loaded=await this.loadData();
+    this.settings={...DEFAULTS,...desktopDefaults(),...loaded};
+    // An existing working installation keeps its engine, paths and secrets.
+    if(loaded&&Object.keys(loaded).length&&!Object.hasOwn(loaded,'setupCompleted'))this.settings.setupCompleted=true;
+    this.localModels=new LocalModels(this.app.vault.adapter,`${this.manifest.dir||`${this.app.vault.configDir||'.obsidian'}/plugins/lingua-atelier`}/local-models`,downloadBytes);
+    this.desktopSetup=new DesktopSetup(downloadBytes);this.makeController();
     this.controller.onChange(()=>{if(!this.controller.busy){Object.assign(this.controller.settings,this.settings);this.controller.store.folder=this.settings.folder;}});
     this.registerView(VIEW,leaf=>new AtelierView(leaf,this));
     this.addRibbonIcon('audio-lines','打开 Lingua Atelier',()=>void this.open());
@@ -24,7 +34,9 @@ export default class AtelierPlugin extends Plugin{
     this.addCommand({id:'pause',name:'暂停 / 继续录音',callback:()=>void this.controller.pause()});
     this.addCommand({id:'mark',name:'标记当前重点',callback:()=>this.controller.mark()});
     this.addCommand({id:'history',name:'打开历史会话 / 恢复未完成转写',callback:()=>void this.controller.store.sessions().then(s=>new SessionPicker(this,s).open())});
-    this.addCommand({id:'settings',name:'配置本地识别与翻译',callback:()=>new SettingsModal(this.app,this).open()});
+    this.addCommand({id:'settings',name:'识别与翻译设置',callback:()=>new SettingsModal(this.app,this).open()});
+    this.addCommand({id:'quick-setup',name:'快速设置：选择并下载模型',callback:()=>this.openSetup()});
+    this.addCommand({id:'usage-help',name:'查看使用提示',callback:()=>this.openHelp()});
     this.addCommand({id:'reorganize-all-content',name:'一键重整全部历史课堂内容与导图',callback:()=>void this.controller.reorganizeAll().catch(e=>new Notice(String(e)))});
     this.addCommand({id:'reorganize-content',name:'重新整理当前课程内容与导图',callback:()=>void this.controller.reorganize().catch(e=>new Notice(String(e)))});
     this.addCommand({id:'organize-notes',name:'一键整理笔记',callback:()=>void this.organizeNotes()});
@@ -36,6 +48,7 @@ export default class AtelierPlugin extends Plugin{
     this.app.workspace.onLayoutReady(()=>{void(async()=>{
       const sessions=(await this.controller.store.sessions()).filter(s=>s.kind!=='test');if(!this.controller.session&&sessions[0])this.controller.load(sessions[0]);
       if(this.settings.openOnStartup)await this.open();
+      if(!loaded||!Object.keys(loaded).length)this.openSetup();
     })().catch(e=>new Notice(String(e)));});
   }
   private makeController():void{
@@ -46,7 +59,7 @@ export default class AtelierPlugin extends Plugin{
       if(existsSync(join(dir,'qwen-asr-server.py')))this.settings.qwenServer=join(dir,'qwen-asr-server.py');
     }
     if(!Platform.isDesktopApp)this.settings.audioSource='microphone';
-    this.controller=new Controller({...this.settings},new Store(this.app,this.settings.folder),()=>this.app.secretStorage?.getSecret(this.settings.secretName)||'',undefined,()=>this.app.secretStorage?.getSecret(this.settings.asrSecretName)||'');
+    this.controller=new Controller({...this.settings},new Store(this.app,this.settings.folder),()=>this.app.secretStorage?.getSecret(this.settings.llmUseCloudKey?this.settings.cloudSecretName:this.settings.secretName)||'',undefined,()=>this.app.secretStorage?.getSecret(this.settings.asrSecretName)||'',this.localModels,()=>this.app.secretStorage?.getSecret(this.settings.cloudSecretName)||'');
   }
   async saveSettings():Promise<void>{
     await this.saveData(this.settings);
@@ -54,6 +67,8 @@ export default class AtelierPlugin extends Plugin{
     this.controller.emit();
   }
   async open():Promise<void>{let leaf=this.app.workspace.getLeavesOfType(VIEW)[0];if(!leaf){leaf=this.app.workspace.getLeaf('tab');await leaf.setViewState({type:VIEW,active:true});}await this.app.workspace.revealLeaf(leaf);}
+  openSetup():void{this.setupModal?.close();this.setupModal=new QuickSetupModal(this);this.setupModal.open();}
+  openHelp(first=false):void{new UsageModal(this,first).open();}
   async openNotebookHome():Promise<void>{
     const file=this.app.vault.getAbstractFileByPath(`${this.settings.folder}/首页.md`);
     if(!(file instanceof TFile)){await this.organizeNotes();return;}
@@ -99,5 +114,5 @@ export default class AtelierPlugin extends Plugin{
       new Notice(this.controller.status,7000);await this.openNotebookHome();
     }catch(e){const message=e instanceof Error?e.message:String(e);if(!this.controller.busy){this.controller.status=message;this.controller.emit();}new Notice(message,10000);}
   }
-  onunload():void{void this.controller.dispose();}
+  onunload():void{this.setupModal?.close();void this.controller.dispose().finally(()=>this.localModels.dispose());}
 }

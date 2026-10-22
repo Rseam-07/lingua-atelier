@@ -4,6 +4,8 @@ import { jsonRequest, multipart } from './http';
 import { cleanModelText, isNonSpeech, uncertainClassroomLanguage, relevantGlossary, clock } from './core';
 import {selectRecognition,SELECTION_SCHEMA,parseLanguageEvidence} from './asr-selection';
 import {NOTE_SYSTEM,NOTE_SCHEMA,noteInput,renderNotes} from './notes';
+import type {LocalInference} from './local-models';
+import {cloudBase,cloudTranscribe} from './cloud';
 import type { Settings, Health, Segment, RecognitionCandidate, RecognitionResult, RecognitionLanguage,LanguageEvidence } from './types';
 
 const localHost=(s:string)=>['127.0.0.1','localhost','[::1]'].includes(new URL(s).hostname);
@@ -15,13 +17,17 @@ export class Providers {
   private children:ChildProcess[]=[];
   private aborter=new AbortController();
   private warmedAt=0;
-  constructor(public settings:Settings, private key:()=>string,private asrKey:()=>string=()=>''){}
+  constructor(public settings:Settings, private key:()=>string,private asrKey:()=>string=()=>'',private local?:LocalInference,private cloudKey:()=>string=()=>''){}
   private get asrHeaders():Record<string,string>{const key=this.asrKey();return key?{Authorization:`Bearer ${key}`}:{ };}
   private get asrUrl():string{return(this.settings.asrEngine==='qwen'?this.settings.qwenUrl:this.settings.asrUrl).replace(/\/$/,'');}
   async health():Promise<Health>{
     const h:Health={asr:false,llm:false,model:false,message:''};
+    const speech=this.settings.asrEngine;
     await Promise.allSettled([
-      jsonRequest(`${this.asrUrl}/health`,{timeout:5000,headers:this.asrHeaders}).then(d=>{h.asr=d.status==='ok'&&(this.settings.asrEngine!=='qwen'||(d.engine==='qwen3-asr'&&d.model_id==='Qwen3-ASR-1.7B'));}),
+      speech==='ondevice'?this.local?.ready(this.settings.localSpeechModel).then(ready=>{h.asr=ready;}):speech==='cloud'
+        ? (this.settings.cloudConsent&&this.cloudKey()?jsonRequest(`${cloudBase(this.settings.cloudRegion)}/models`,{timeout:10000,headers:{Authorization:`Bearer ${this.cloudKey()}`}}).then(d=>{h.asr=d.data?.some((m:any)=>m.id==='qwen3-asr-flash')||false;}):Promise.resolve())
+        :jsonRequest(`${this.asrUrl}/health`,{timeout:5000,headers:this.asrHeaders}).then(d=>{h.asr=d.status==='ok'&&(speech!=='qwen'||(d.engine==='qwen3-asr'&&d.model_id==='Qwen3-ASR-1.7B'));}),
+      this.settings.llmMode==='ondevice'?this.local?.ready(this.settings.localTextModel).then(ready=>{h.llm=h.model=ready;}):
       this.settings.llmMode==='ollama'
         ? jsonRequest(`${this.settings.llmUrl.replace(/\/$/,'')}/api/tags`,{timeout:2000}).then(d=>{h.llm=Array.isArray(d.models);h.model=d.models?.some((m:any)=>m.name===this.settings.llmModel || m.name===this.settings.llmModel+':latest')||false;})
         : jsonRequest(`${this.settings.llmUrl.replace(/\/$/,'')}/models`,{timeout:10000,headers:this.key()?{Authorization:`Bearer ${this.key()}`}:{}}).then(d=>{h.llm=Array.isArray(d.data);h.model=d.data?.some((m:any)=>m.id===this.settings.llmModel)||false;})
@@ -39,7 +45,14 @@ export class Providers {
     p.on('error',()=>{});p.unref();
   }
   async ensure(onStatus:(s:string)=>void):Promise<void>{
+    if(this.settings.asrEngine==='cloud'&&(!this.settings.cloudConsent||!this.cloudKey()))throw new Error('请打开快速设置，确认在线识别并填写百炼密钥。');
     let h=await this.health();
+    const managed=this.settings.asrEngine==='ondevice'||this.settings.asrEngine==='cloud';
+    if(managed){
+      if(!h.asr||!h.llm||!h.model)throw new Error(h.message+'。请打开快速设置，下载模型或检测在线配置。');
+      if(this.settings.asrEngine==='ondevice'){onStatus('正在加载设备上的语音模型…');await this.local!.warm(this.settings.localSpeechModel,this.aborter.signal);}
+      return;
+    }
     if(!hasDesktop()){
       if(localHost(this.asrUrl))throw new Error('手机上的 localhost 指手机本身。请在设置中填写电脑识别服务的地址与连接密钥。');
       if(!h.asr||!h.llm||!h.model)throw new Error(h.message+'。请检查电脑服务地址或文字 API 配置。');
@@ -80,6 +93,11 @@ export class Providers {
     throw new Error(h.message+'。请打开设置并检查服务。');
   }
   async transcribe(wav:ArrayBuffer,signal=this.aborter.signal):Promise<string>{
+    if(this.settings.asrEngine==='ondevice'){
+      if(!this.local)throw new Error('本地推理组件未就绪，请重新打开插件。');
+      const text=await this.local.transcribe(this.settings.localSpeechModel,wav,this.settings.language,signal);return isNonSpeech(text)?'':text.trim();
+    }
+    if(this.settings.asrEngine==='cloud')return cloudTranscribe(wav,{region:this.settings.cloudRegion,key:this.cloudKey(),language:this.settings.language,consent:this.settings.cloudConsent,signal});
     // Quiet teachers were being removed before recognition. Explicitly override
     // the server's VAD default for every request, including already-running ones.
     const qwen=this.settings.asrEngine==='qwen';
@@ -99,6 +117,7 @@ export class Providers {
     return isNonSpeech(text)?'':text;
   }
   async transcribeDual(wav:ArrayBuffer,context:string,signal=this.aborter.signal):Promise<RecognitionResult>{
+    if(this.settings.asrEngine==='ondevice'||this.settings.asrEngine==='cloud')throw new Error('当前模式使用自动语言识别，不支持桌面中法双路。请在快速设置中关闭双路选项。');
     const began=performance.now();let candidates:RecognitionCandidate[],evidence:LanguageEvidence|undefined;
     if(this.settings.asrEngine==='qwen'){
       // One upload, two decoder sequences, one resident model / audio encoder.
@@ -131,8 +150,13 @@ export class Providers {
     },evidence);
   }
   async chat(system:string,user:string,maxTokens:number,format?:object,signal=this.aborter.signal):Promise<string>{
+    if(this.settings.llmMode==='ondevice'){
+      if(!this.local)throw new Error('本地文字模型未就绪。');
+      const text=cleanModelText(await this.local.chat(this.settings.localTextModel,system+(format?'\n必须只输出合法 JSON 对象，不要 Markdown 围栏。':''),user,maxTokens,signal));
+      if(!text)throw new Error('本地文字模型没有返回内容，可换用更大模型或在线服务。');return text;
+    }
     const local=this.settings.llmMode==='ollama';
-    const payload=local?{model:this.settings.llmModel,stream:false,keep_alive:'15m',...(format?{format}:{}),messages:[{role:'system',content:system},{role:'user',content:user}],options:{temperature:0.1,num_ctx:16384,num_predict:maxTokens}}:{model:this.settings.llmModel,stream:false,...(new URL(this.settings.llmUrl).hostname==='api.deepseek.com'?{thinking:{type:'disabled'}}:{}),...(format?{response_format:{type:'json_object'}}:{}),temperature:0.1,max_tokens:maxTokens,messages:[{role:'system',content:system},{role:'user',content:user}]};
+    const payload=local?{model:this.settings.llmModel,stream:false,keep_alive:'15m',...(format?{format}:{}),messages:[{role:'system',content:system},{role:'user',content:user}],options:{temperature:0.1,num_ctx:16384,num_predict:maxTokens}}:{model:this.settings.llmModel,stream:false,...(new URL(this.settings.llmUrl).hostname==='api.deepseek.com'?{thinking:{type:'disabled'}}:{}),...(this.settings.llmUseCloudKey?{enable_thinking:false}:{}),...(format?{response_format:{type:'json_object'}}:{}),temperature:0.1,max_tokens:maxTokens,messages:[{role:'system',content:system},{role:'user',content:user}]};
     const d=await jsonRequest(`${this.settings.llmUrl.replace(/\/$/,'')}${local?'/api/chat':'/chat/completions'}`,{method:'POST',body:JSON.stringify(payload),headers:{'Content-Type':'application/json',...(!local&&this.key()?{Authorization:`Bearer ${this.key()}`}:{})},timeout:90000,signal:signal===this.aborter.signal?signal:AbortSignal.any([signal,this.aborter.signal])});
     if(!local&&d.choices?.[0]?.finish_reason==='length')throw new Error('模型输出达到长度上限，原笔记已保留；请分批整理。');
     const result=cleanModelText(local?d.message?.content||'':d.choices?.[0]?.message?.content||'');

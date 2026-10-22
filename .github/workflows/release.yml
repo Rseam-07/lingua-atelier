@@ -26,7 +26,7 @@ jobs:
           python-version: '3.12'
       - name: Install and test
         run: |
-          npm ci
+          npm ci --ignore-scripts
           npm test
           python -m pip install fastapi==0.146.0 python-multipart==0.0.32 numpy httpx
           python -m unittest discover -s tests -p '*_test.py'

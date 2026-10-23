@@ -1,0 +1,69 @@
+name: Android native Whisper
+on:
+  push:
+    paths: ['android/**', '.github/workflows/android.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  native:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+      - name: Android SDK and NDK
+        run: |
+          sdkmanager 'platforms;android-35' 'build-tools;35.0.0' 'ndk;27.2.12479018' 'cmake;3.22.1' 'system-images;android-35;google_apis;x86_64'
+      - name: Compile both native ABIs and run audio contracts
+        run: gradle -p android :app:assembleDebug :app:assembleDebugAndroidTest :app:testDebugUnitTest --no-daemon --stacktrace
+      - name: Prepare reproducible inference smoke test
+        run: |
+          mkdir -p artifacts/android-native
+          curl --fail --location --retry 3 'https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-tiny-q5_1.bin' -o artifacts/android-native/model.bin
+          echo '818710568da3ca15689e31a743197b520007872ff9576237bda97bd1b469c3d7  artifacts/android-native/model.bin' | sha256sum --check
+          curl --fail --location --retry 3 'https://raw.githubusercontent.com/ggml-org/whisper.cpp/2eeeba56e9edd762b4b38467bab96c2517163158/samples/jfk.wav' -o artifacts/android-native/sample.wav
+      - name: Start Android emulator
+        run: |
+          sudo chmod 666 /dev/kvm
+          echo no | avdmanager create avd --force --name lingua --package 'system-images;android-35;google_apis;x86_64' --device pixel_6
+          "$ANDROID_HOME/emulator/emulator" -avd lingua -no-window -no-audio -no-boot-anim -no-snapshot -gpu swiftshader_indirect -cores 2 -memory 3072 > artifacts/android-native/emulator.log 2>&1 &
+          adb wait-for-device
+          for attempt in $(seq 1 120); do
+            if [[ $(adb shell getprop sys.boot_completed | tr -d '\r') == 1 ]]; then exit 0; fi
+            sleep 2
+          done
+          exit 1
+      - name: Exercise actual native model on Android
+        run: |
+          adb install -r android/app/build/outputs/apk/debug/app-debug.apk
+          adb install -r android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+          adb shell run-as app.lingua.nativewhisper mkdir -p files
+          adb exec-in run-as app.lingua.nativewhisper sh -c 'cat > files/ci-model.bin' < artifacts/android-native/model.bin
+          adb exec-in run-as app.lingua.nativewhisper sh -c 'cat > files/ci-sample.wav' < artifacts/android-native/sample.wav
+          adb shell am instrument -w app.lingua.nativewhisper.test/androidx.test.runner.AndroidJUnitRunner | tee artifacts/android-native/instrumentation.txt
+          grep -q 'OK (1 test)' artifacts/android-native/instrumentation.txt
+          adb logcat -d > artifacts/android-native/logcat.txt
+          adb shell am start -n app.lingua.nativewhisper/.MainActivity
+          sleep 3
+          adb exec-out screencap -p > artifacts/android-native/setup.png
+      - name: Package test APK
+        run: |
+          cp android/app/build/outputs/apk/debug/app-debug.apk artifacts/android-native/Lingua-Atelier-Android-0.9.0-beta.apk
+          sha256sum artifacts/android-native/*.apk > artifacts/android-native/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: lingua-android-native
+          path: |
+            artifacts/android-native/*.apk
+            artifacts/android-native/*.txt
+            artifacts/android-native/*.png
+            artifacts/android-native/*.log
+            android/app/build/reports/tests/
